@@ -30,14 +30,50 @@ async function run() {
     const cartCollections = client.db("bisrtoDB").collection("carts");
     const userCollections = client.db("bisrtoDB").collection("user");
     /*
+    admin related api
+    */
+    app.get("/user", async (req, res) => {
+      const result = await userCollections.find().toArray();
+      res.send(result);
+    });
+
+    /*
     User related api
     */
 
-    app.post('/user', async(req, res) => {
+    app.patch("/users/admin/id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          role: "admin",
+        },
+      };
+      const result = await userCollections.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
+    app.delete("/user/:id", async (req, res) => {
+      const id = req.params.id;
+      console.log(id);
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollections.deleteOne(query);
+      res.send(result);
+    });
+    app.post("/user", async (req, res) => {
       const user = req.body;
-      const result = await userCollections.insertOne(user)
-      res.send(result)
-    })
+      /*Check if user already exists then insert it on db 
+
+      */
+      const query = { email: user.email };
+      const existingUser = await userCollections.findOne(query);
+      if (existingUser) {
+        return res.send({ message: "User already exists", insertedId: null });
+      }
+      //
+      const result = await userCollections.insertOne(user);
+      res.send(result);
+    });
 
     //----------- Menu related api
     app.get("/menu", async (req, res) => {
@@ -60,19 +96,18 @@ async function run() {
 
     app.get("/cart", async (req, res) => {
       const email = req.query.email;
-      const query = { email : email}
+      const query = { email: email };
       const result = await cartCollections.find(query).toArray();
       res.send(result);
-    }); 
+    });
 
-    app.delete('/cart/:id', async (req, res) => {
+    app.delete("/cart/:id", async (req, res) => {
       const id = req.params.id;
       console.log(id);
       const query = { _id: new ObjectId(id) };
-      const result = await cartCollections.deleteOne(query)
+      const result = await cartCollections.deleteOne(query);
       res.send(result);
-    })
-
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
@@ -91,3 +126,5 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
+
+//$iCi2K0s.q4)
