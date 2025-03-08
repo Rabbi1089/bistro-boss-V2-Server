@@ -3,7 +3,7 @@ const app = express();
 const cors = require("cors");
 var jwt = require("jsonwebtoken");
 require("dotenv").config();
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 //without require dotenv env will not work
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -48,6 +48,7 @@ async function run() {
     const reviewsCollections = client.db("bisrtoDB").collection("reviews");
     const cartCollections = client.db("bisrtoDB").collection("carts");
     const userCollections = client.db("bisrtoDB").collection("user");
+    const paymentCollections = client.db("bisrtoDB").collection("payment");
     /*
     Json web token related api
     */
@@ -222,19 +223,53 @@ async function run() {
       const result = await cartCollections.deleteOne(query);
       res.send(result);
     });
-
-    app.post('/create-payment-intent', async (req, res ) => {
-      const {price } = req.body;
+    //----------------------------------------------stripe ----------------------------------*************
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
       const amount = parseInt(price * 100);
-      console.log(amount , 'amount from intent');
+      console.log(amount, "amount from intent");
       const paymentIntent = await stripe.paymentIntents.create({
-        amount:amount,
-        currency: 'usd',
-        payment_method_types:['card']
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+      res.send({ client_secret: paymentIntent.client_secret });
+    });
 
-      })
-      res.send({client_secret: paymentIntent.client_secret});
-    })
+    //************* Payment related api ************** */
+    app.post("/payment", async (req, res) => {
+      try {
+        const payment = req.body;
+        const paymentResult = await paymentCollections.insertOne(payment);
+        console.log("payment Info", payment);
+        console.log("payment result", paymentResult);
+        const query = {
+          _id: {
+            $in: payment.cartIds.map((id) => new ObjectId(id)),
+          },
+        };
+        const deleteResult = await cartCollections.deleteMany(query);
+        console.log(deleteResult);
+  
+        res.send({ paymentResult, deleteResult });
+      } catch (error) {
+        console.error("Error processing payment:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+      }
+    });
+
+app.get('/payments/:email',verifyToken, async(req , res) => {
+  const email = req.params.email;
+  const query = { email: email };
+  console.log(query);
+  if (req.params.email != req.decoded.email) {
+    return res.status(403).send({message : 'forbidden access'})
+  }
+  const result = await paymentCollections.find(query).toArray()
+  res.send(result)
+})
+
+
 
     await client.db("admin").command({ ping: 1 });
     console.log(
