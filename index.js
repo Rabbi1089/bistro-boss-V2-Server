@@ -68,7 +68,7 @@ async function run() {
       const query = { email: email };
       const user = await userCollections.findOne(query);
       const isAdmin = user?.role === "admin";
-      console.log(isAdmin);
+      console.log("from is admin", isAdmin);
       if (!isAdmin) {
         return res.status(403).send({ message: "forbidden access" });
       }
@@ -80,7 +80,6 @@ async function run() {
     */
     app.get("/users/admin/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
-      console.log(req.decoded.email);
       if (email !== req.decoded.email) {
         return res.status(403).send({ message: "unauthorized access" });
       }
@@ -250,7 +249,7 @@ async function run() {
         };
         const deleteResult = await cartCollections.deleteMany(query);
         console.log(deleteResult);
-  
+
         res.send({ paymentResult, deleteResult });
       } catch (error) {
         console.error("Error processing payment:", error);
@@ -258,18 +257,95 @@ async function run() {
       }
     });
 
-app.get('/payments/:email',verifyToken, async(req , res) => {
-  const email = req.params.email;
-  const query = { email: email };
-  console.log(query);
-  if (req.params.email != req.decoded.email) {
-    return res.status(403).send({message : 'forbidden access'})
-  }
-  const result = await paymentCollections.find(query).toArray()
-  res.send(result)
-})
+    app.get("/payments/:email", verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      console.log(query);
+      if (req.params.email != req.decoded.email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      const result = await paymentCollections.find(query).toArray();
+      res.send(result);
+    });
 
+    //stats or analytics
 
+    app.get("/admin-stats", verifyToken, verifyAdmin, async (req, res) => {
+      const users = await userCollections.estimatedDocumentCount();
+      const menuItems = await menuCollections.estimatedDocumentCount();
+      const orders = await paymentCollections.estimatedDocumentCount();
+
+      const payments = await paymentCollections.find().toArray();
+      const revenues = payments.reduce(
+        (total, payment) => total + Number(payment.price),
+        0
+      );
+
+      const result = await paymentCollections
+        .aggregate([
+          {
+            $group: {
+              _id: null,
+              totalRevenue: {
+                $sum: "$price",
+              },
+            },
+          },
+        ])
+        .toArray();
+
+      const revenue = result.length > 0 ? result[0].totalRevenue : 0;
+
+      res.send({
+        users,
+        menuItems,
+        orders,
+        revenue,
+        revenues,
+      });
+    });
+
+    app.get("/order-stats",verifyToken, verifyAdmin, async (req, res) => {
+      const result = await paymentCollections
+        .aggregate([
+          {
+            $unwind: "$menuItemIds",
+          },
+          {
+            $lookup: {
+              from: "menu",
+              localField: "menuItemIds",
+              foreignField: "_id",
+              as: "menuItems",
+            },
+          },
+          {
+            $unwind: "$menuItems",
+          },
+          {
+            $group: {
+              _id: "$menuItems.category",
+              quantity: { $sum: 1 },
+              revenue: { $sum: "$menuItems.price" },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              category: '$_id',
+              quantity: '$quantity',
+              revenue:'$revenue'
+            }
+          }
+        ])
+        .toArray();
+      res.send(result);
+    });
+
+    /*
+const stringPrices = await paymentCollections.find({ price: { $type: 'string' } }).toArray();
+console.log(stringPrices);
+*/
 
     await client.db("admin").command({ ping: 1 });
     console.log(
